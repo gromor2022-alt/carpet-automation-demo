@@ -17,13 +17,20 @@ returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 if orders_file and returns_file:
 
     # -----------------------------
-    # LOAD DATA (safe)
+    # LOAD ORDERS FILE (AUTO DETECT FORMAT)
     # -----------------------------
     try:
-        orders_df = pd.read_csv(orders_file, header=1)
+        # Try Amazon format (tab-separated)
+        orders_df = pd.read_csv(orders_file, sep="\t")
+        if len(orders_df.columns) == 1:
+            raise Exception("Wrong format")
     except:
+        orders_file.seek(0)
         orders_df = pd.read_csv(orders_file)
 
+    # -----------------------------
+    # LOAD RETURNS FILE
+    # -----------------------------
     try:
         returns_df = pd.read_csv(returns_file)
     except:
@@ -37,11 +44,11 @@ if orders_file and returns_file:
     returns_df.columns = returns_df.columns.astype(str).str.strip()
 
     # -----------------------------
-    # FIND ORDER ID COLUMNS (SAFE)
+    # FIND ORDER ID COLUMNS (ROBUST)
     # -----------------------------
     def find_order_column(df):
         for col in df.columns:
-            col_clean = col.lower()
+            col_clean = col.lower().replace("-", "").replace("_", "")
             if "order" in col_clean and "id" in col_clean:
                 return col
         return None
@@ -71,25 +78,16 @@ if orders_file and returns_file:
     # STATUS LOGIC
     # -----------------------------
     def get_status(row):
-        if pd.notna(row.get("Return Tracking ID (Hide)", None)):
+        if "tracking" in str(row).lower():
             return "In Transit"
-        elif pd.notna(row.get("Return Date", None)):
+        elif "return" in str(row).lower():
             return "Return Initiated"
         else:
             return "Pending"
 
     merged_df["Status"] = merged_df.apply(get_status, axis=1)
 
-    # -----------------------------
-    # CLEAN VIEW (safe rename)
-    # -----------------------------
-    rename_map = {
-        "Return Cost": "Return Cost",
-        "Carrier": "Carrier",
-        "Paid By": "Paid By"
-    }
-
-    clean_df = merged_df.rename(columns=rename_map)
+    clean_df = merged_df.copy()
 
     # -----------------------------
     # DASHBOARD METRICS
@@ -113,18 +111,33 @@ if orders_file and returns_file:
     # -----------------------------
     st.subheader("📩 Daily Report")
 
-    if "Return Cost" in clean_df.columns:
-        total_cost = pd.to_numeric(clean_df["Return Cost"], errors="coerce").fillna(0).sum()
-    else:
-        total_cost = 0
+    # Safe cost calculation
+    total_cost = 0
+    if "return cost" in [c.lower() for c in clean_df.columns]:
+        col = [c for c in clean_df.columns if "return cost" in c.lower()][0]
+        total_cost = pd.to_numeric(clean_df[col], errors="coerce").fillna(0).sum()
 
-    if "Carrier" in clean_df.columns and not clean_df["Carrier"].mode().empty:
-        top_carrier = clean_df["Carrier"].mode()[0]
+    # Safe carrier
+    carrier_col = None
+    for col in clean_df.columns:
+        if "carrier" in col.lower():
+            carrier_col = col
+            break
+
+    if carrier_col and not clean_df[carrier_col].mode().empty:
+        top_carrier = clean_df[carrier_col].mode()[0]
     else:
         top_carrier = "N/A"
 
-    seller_count = len(clean_df[clean_df.get("Paid By", "") == "Seller"])
-    customer_count = len(clean_df[clean_df.get("Paid By", "") == "Customer"])
+    # Paid by counts
+    seller_count = 0
+    customer_count = 0
+
+    for col in clean_df.columns:
+        if "paid" in col.lower():
+            seller_count = len(clean_df[clean_df[col] == "Seller"])
+            customer_count = len(clean_df[clean_df[col] == "Customer"])
+            break
 
     report = f"""
 📊 DAILY RETURNS SUMMARY
