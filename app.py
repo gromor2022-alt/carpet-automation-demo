@@ -3,13 +3,22 @@ import pandas as pd
 
 st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
-st.title("📊 Carpet Dashboard")
+st.title("📊 Carpet Automation Dashboard")
 
+# -----------------------------
+# ROLE SELECT
+# -----------------------------
 role = st.selectbox("Select Role", ["Admin", "Production", "Shipping"])
 
+# -----------------------------
+# FILE UPLOAD
+# -----------------------------
 orders_file = st.file_uploader("Upload Orders File", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
+# -----------------------------
+# HELPERS
+# -----------------------------
 def load_file(file):
     for sep in ["\t", ","]:
         try:
@@ -23,79 +32,124 @@ def load_file(file):
     return pd.read_csv(file)
 
 def safe_df(df):
-    # LIMIT SIZE (CRITICAL)
-    df = df.head(200)
-
-    # Convert everything to string (avoid Arrow crash)
+    df = df.head(300)  # limit rows to prevent crash
     for col in df.columns:
         df[col] = df[col].astype(str)
-
     return df
 
+def find_order_column(df):
+    for col in df.columns:
+        col_clean = str(col).lower().replace("-", "").replace("_", "")
+        if "order" in col_clean and "id" in col_clean:
+            return col
+    return None
+
+# -----------------------------
+# MAIN
+# -----------------------------
 if orders_file and returns_file:
 
     st.success("Files uploaded ✅")
 
     try:
+        # Load
         orders_df = load_file(orders_file)
         returns_df = load_file(returns_file)
 
-        st.write("Files Loaded")
-
-        # SIMPLE MERGE (no fancy logic yet)
+        # Make safe
         orders_df = safe_df(orders_df)
         returns_df = safe_df(returns_df)
 
-        st.write("Orders Shape:", orders_df.shape)
-        st.write("Returns Shape:", returns_df.shape)
+        # Detect columns
+        orders_col = find_order_column(orders_df)
+        returns_col = find_order_column(returns_df)
 
-        # Show only small preview
-        st.subheader("Orders Preview")
-        st.dataframe(orders_df.head(50))
+        st.write("Orders Order ID:", orders_col)
+        st.write("Returns Order ID:", returns_col)
 
-        st.subheader("Returns Preview")
-        st.dataframe(returns_df.head(50))
+        if not orders_col or not returns_col:
+            st.error("❌ Order ID column not found")
+            st.stop()
 
-        # FAKE MERGE JUST TO TEST STABILITY
-        merged_df = pd.concat([returns_df, orders_df], axis=1)
+        # -----------------------------
+        # MERGE
+        # -----------------------------
+        merged_df = pd.merge(
+            returns_df,
+            orders_df,
+            left_on=returns_col,
+            right_on=orders_col,
+            how="left"
+        )
 
         merged_df = safe_df(merged_df)
-        
+
         # -----------------------------
-# PRODUCTION VIEW
-# -----------------------------
+        # ROLE BASED VIEWS
+        # -----------------------------
 
-if role == "Production":
+        # 🔒 PRODUCTION VIEW (NO CUSTOMER DATA)
+        if role == "Production":
 
-    st.subheader("🏭 Production View")
+            st.subheader("🏭 Production View")
 
-    # Select only safe columns
-    production_columns = []
+            prod_cols = []
 
-    for col in merged_df.columns:
-        col_lower = col.lower()
+            for col in merged_df.columns:
+                col_lower = col.lower()
 
-        if (
-            "order" in col_lower or
-            "product" in col_lower or
-            "quantity" in col_lower or
-            "ship" in col_lower or
-            "date" in col_lower
-        ):
-            production_columns.append(col)
+                if (
+                    "order" in col_lower or
+                    "product" in col_lower or
+                    "quantity" in col_lower or
+                    "ship" in col_lower or
+                    "date" in col_lower
+                ):
+                    prod_cols.append(col)
 
-    production_df = merged_df[production_columns].head(200)
+            production_df = merged_df[prod_cols]
 
-    st.dataframe(production_df)
+            st.dataframe(production_df)
 
-        st.subheader("Merged Preview")
-        st.dataframe(merged_df.head(50))
+        # 🚚 SHIPPING VIEW (WITH CUSTOMER DATA)
+        elif role == "Shipping":
 
-        st.success("✅ App Stable (No Crash)")
+            st.subheader("🚚 Shipping View")
+
+            ship_cols = []
+
+            for col in merged_df.columns:
+                col_lower = col.lower()
+
+                if (
+                    "order" in col_lower or
+                    "product" in col_lower or
+                    "address" in col_lower or
+                    "city" in col_lower or
+                    "state" in col_lower or
+                    "zip" in col_lower or
+                    "buyer" in col_lower or
+                    "email" in col_lower or
+                    "phone" in col_lower or
+                    "ship" in col_lower
+                ):
+                    ship_cols.append(col)
+
+            shipping_df = merged_df[ship_cols]
+
+            st.dataframe(shipping_df)
+
+        # 👨‍💼 ADMIN VIEW (FULL DATA)
+        else:
+
+            st.subheader("📊 Admin View (Full Data)")
+            st.dataframe(merged_df)
+
+        st.success("✅ App Running Stable")
 
     except Exception as e:
-        st.error("🚨 Error")
-        st.write(e)
+        st.error("🚨 Error occurred")
+        st.write(str(e))
 
 else:
-    st.warning("Upload both files")
+    st.warning("👆 Upload BOTH files to continue")
