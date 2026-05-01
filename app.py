@@ -2,28 +2,69 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 
-st.set_page_config(page_title="Carpet Dashboard", layout="wide")
-
-st.title("📊 Carpet Automation Dashboard")
+st.set_page_config(page_title="Carpet SaaS Dashboard", layout="wide")
 
 # -----------------------------
-# DB SETUP
+# DATABASE
 # -----------------------------
 conn = sqlite3.connect("carpet.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS status_table (
-    order_id TEXT PRIMARY KEY,
-    status TEXT
+    client TEXT,
+    order_id TEXT,
+    status TEXT,
+    PRIMARY KEY (client, order_id)
 )
 """)
 conn.commit()
 
 # -----------------------------
-# ROLE
+# LOGIN SYSTEM
 # -----------------------------
-role = st.selectbox("Select Role", ["Admin", "Production", "Shipping"])
+users = {
+    "admin": {"password": "123", "role": "Admin"},
+    "prod": {"password": "123", "role": "Production"},
+    "ship": {"password": "123", "role": "Shipping"}
+}
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+
+    st.title("🔐 Login")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if username in users and users[username]["password"] == password:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.role = users[username]["role"]
+            st.success("Login Successful ✅")
+            st.rerun()
+        else:
+            st.error("Invalid Credentials ❌")
+
+    st.stop()
+
+# -----------------------------
+# APP START
+# -----------------------------
+st.title("📊 Carpet Automation SaaS")
+
+st.write(f"Logged in as: **{st.session_state.username} ({st.session_state.role})**")
+
+# -----------------------------
+# CLIENT SELECTOR
+# -----------------------------
+client_name = st.selectbox(
+    "Select Client",
+    ["Exporter A", "Exporter B", "Exporter C"]
+)
 
 # -----------------------------
 # FILE UPLOAD
@@ -47,16 +88,20 @@ def safe_df(df):
     return df
 
 def get_status(order_id):
-    cursor.execute("SELECT status FROM status_table WHERE order_id=?", (order_id,))
+    cursor.execute(
+        "SELECT status FROM status_table WHERE client=? AND order_id=?",
+        (client_name, order_id)
+    )
     result = cursor.fetchone()
     return result[0] if result else "Pending"
 
 def update_status(order_id, status):
     cursor.execute("""
-        INSERT INTO status_table (order_id, status)
-        VALUES (?, ?)
-        ON CONFLICT(order_id) DO UPDATE SET status=excluded.status
-    """, (order_id, status))
+        INSERT INTO status_table (client, order_id, status)
+        VALUES (?, ?, ?)
+        ON CONFLICT(client, order_id)
+        DO UPDATE SET status=excluded.status
+    """, (client_name, order_id, status))
     conn.commit()
 
 def get_columns(df, keywords):
@@ -66,11 +111,9 @@ def get_columns(df, keywords):
     ]
 
 # -----------------------------
-# MAIN
+# MAIN LOGIC
 # -----------------------------
 if orders_file and returns_file:
-
-    st.success("Files uploaded ✅")
 
     try:
         orders_df = safe_df(load_orders(orders_file))
@@ -89,6 +132,8 @@ if orders_file and returns_file:
 
         merged_df = safe_df(merged_df)
 
+        role = st.session_state.role
+
         # -----------------------------
         # ADMIN
         # -----------------------------
@@ -96,7 +141,7 @@ if orders_file and returns_file:
 
             st.subheader("👨‍💼 Admin View")
 
-            st.write("### 🆕 New Orders")
+            st.write("### 🆕 Orders")
             st.dataframe(orders_df)
 
             st.write("### 🔁 Returns")
@@ -132,7 +177,6 @@ if orders_file and returns_file:
 
             shipping_df = merged_df[get_columns(merged_df, keys)].copy()
 
-            # Add Status from DB
             shipping_df["Status"] = shipping_df.apply(
                 lambda x: get_status(x.get("order-id", "NA")),
                 axis=1
@@ -145,20 +189,20 @@ if orders_file and returns_file:
             for idx, row in shipping_df.head(20).iterrows():
                 order_id = row.get("order-id", f"row-{idx}")
 
-                col1, col2, col3, col4 = st.columns(4)
+                c1, c2, c3, c4 = st.columns(4)
 
-                with col1:
+                with c1:
                     st.write(order_id)
 
-                with col2:
+                with c2:
                     if st.button(f"📦 Produced {idx}"):
                         update_status(order_id, "Produced")
 
-                with col3:
+                with c3:
                     if st.button(f"🚚 Shipped {idx}"):
                         update_status(order_id, "Shipped")
 
-                with col4:
+                with c4:
                     st.write(get_status(order_id))
 
         # -----------------------------
@@ -169,14 +213,16 @@ if orders_file and returns_file:
         total_orders = len(orders_df)
         total_returns = len(merged_df)
 
-        cursor.execute("SELECT COUNT(*) FROM status_table WHERE status='Produced'")
+        cursor.execute("SELECT COUNT(*) FROM status_table WHERE client=? AND status='Produced'", (client_name,))
         produced = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM status_table WHERE status='Shipped'")
+        cursor.execute("SELECT COUNT(*) FROM status_table WHERE client=? AND status='Shipped'", (client_name,))
         shipped = cursor.fetchone()[0]
 
         report = f"""
-CARPET DASHBOARD REPORT
+CARPET EXPORT REPORT
+
+Client: {client_name}
 
 Orders: {total_orders}
 Returns: {total_returns}
@@ -194,11 +240,11 @@ Pending: {total_orders - shipped}
             file_name="report.txt"
         )
 
-        st.success("✅ Data is now persistent!")
+        st.success("✅ SaaS System Running")
 
     except Exception as e:
         st.error("🚨 Error")
         st.write(e)
 
 else:
-    st.warning("Upload both files")
+    st.info("Upload both files to begin")
