@@ -23,8 +23,7 @@ def load_orders(file):
     return pd.read_csv(file)
 
 def load_returns(file):
-    # Fix header issue
-    return pd.read_csv(file, header=1)
+    return pd.read_csv(file, header=1)  # important fix
 
 def safe_df(df):
     df = df.head(300)
@@ -47,11 +46,11 @@ if orders_file and returns_file:
         orders_df = safe_df(orders_df)
         returns_df = safe_df(returns_df)
 
-        # Fixed columns (based on your file)
+        # Fixed columns
         orders_col = "order-id"
         returns_col = "Order ID (Hide)"
 
-        # Merge
+        # Merge for returns
         merged_df = pd.merge(
             returns_df,
             orders_df,
@@ -69,25 +68,23 @@ if orders_file and returns_file:
 
             st.subheader("🏭 Production View")
 
-            # NEW ORDERS
             st.write("### 🆕 New Orders")
 
-            orders_cols = [
+            prod_orders_cols = [
                 col for col in orders_df.columns
                 if any(x in col.lower() for x in ["order", "product", "quantity", "ship", "date"])
             ]
 
-            st.dataframe(orders_df[orders_cols])
+            st.dataframe(orders_df[prod_orders_cols])
 
-            # RETURNS
             st.write("### 🔁 Returned Orders")
 
-            returns_cols = [
+            prod_returns_cols = [
                 col for col in merged_df.columns
                 if any(x in col.lower() for x in ["order", "product", "quantity", "ship", "date"])
             ]
 
-            st.dataframe(merged_df[returns_cols])
+            st.dataframe(merged_df[prod_returns_cols])
 
         # -----------------------------
         # SHIPPING VIEW
@@ -96,15 +93,31 @@ if orders_file and returns_file:
 
             st.subheader("🚚 Shipping View")
 
-            ship_cols = [
-                col for col in merged_df.columns
+            st.write("### 🆕 New Orders")
+
+            ship_orders_cols = [
+                col for col in orders_df.columns
                 if any(x in col.lower() for x in [
-                    "order", "product", "address", "city", "state",
-                    "zip", "buyer", "email", "phone", "ship"
+                    "order", "product", "address", "city",
+                    "state", "zip", "buyer", "email",
+                    "phone", "ship"
                 ])
             ]
 
-            st.dataframe(merged_df[ship_cols])
+            st.dataframe(orders_df[ship_orders_cols])
+
+            st.write("### 🔁 Returned Orders")
+
+            ship_returns_cols = [
+                col for col in merged_df.columns
+                if any(x in col.lower() for x in [
+                    "order", "product", "address", "city",
+                    "state", "zip", "buyer", "email",
+                    "phone", "ship"
+                ])
+            ]
+
+            st.dataframe(merged_df[ship_returns_cols])
 
         # -----------------------------
         # ADMIN VIEW
