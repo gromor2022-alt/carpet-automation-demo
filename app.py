@@ -1,9 +1,24 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 
 st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
 st.title("📊 Carpet Automation Dashboard")
+
+# -----------------------------
+# DB SETUP
+# -----------------------------
+conn = sqlite3.connect("carpet.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS status_table (
+    order_id TEXT PRIMARY KEY,
+    status TEXT
+)
+""")
+conn.commit()
 
 # -----------------------------
 # ROLE
@@ -31,6 +46,19 @@ def safe_df(df):
         df[col] = df[col].astype(str)
     return df
 
+def get_status(order_id):
+    cursor.execute("SELECT status FROM status_table WHERE order_id=?", (order_id,))
+    result = cursor.fetchone()
+    return result[0] if result else "Pending"
+
+def update_status(order_id, status):
+    cursor.execute("""
+        INSERT INTO status_table (order_id, status)
+        VALUES (?, ?)
+        ON CONFLICT(order_id) DO UPDATE SET status=excluded.status
+    """, (order_id, status))
+    conn.commit()
+
 def get_columns(df, keywords):
     return [
         col for col in df.columns
@@ -45,15 +73,12 @@ if orders_file and returns_file:
     st.success("Files uploaded ✅")
 
     try:
-        # Load
         orders_df = safe_df(load_orders(orders_file))
         returns_df = safe_df(load_returns(returns_file))
 
-        # Fixed columns
         orders_col = "order-id"
         returns_col = "Order ID (Hide)"
 
-        # Merge
         merged_df = pd.merge(
             returns_df,
             orders_df,
@@ -65,19 +90,7 @@ if orders_file and returns_file:
         merged_df = safe_df(merged_df)
 
         # -----------------------------
-        # STATUS COLUMN (SESSION BASED)
-        # -----------------------------
-        if "status_dict" not in st.session_state:
-            st.session_state.status_dict = {}
-
-        def get_status(order_id):
-            return st.session_state.status_dict.get(order_id, "Pending")
-
-        def update_status(order_id, new_status):
-            st.session_state.status_dict[order_id] = new_status
-
-        # -----------------------------
-        # ADMIN VIEW
+        # ADMIN
         # -----------------------------
         if role == "Admin":
 
@@ -86,42 +99,43 @@ if orders_file and returns_file:
             st.write("### 🆕 New Orders")
             st.dataframe(orders_df)
 
-            st.write("### 🔁 Returned Orders")
+            st.write("### 🔁 Returns")
             st.dataframe(merged_df)
 
         # -----------------------------
-        # PRODUCTION VIEW
+        # PRODUCTION
         # -----------------------------
         elif role == "Production":
 
             st.subheader("🏭 Production View")
 
-            prod_keys = ["order", "product", "quantity", "ship", "date"]
+            keys = ["order", "product", "quantity", "ship", "date"]
 
-            st.write("### 🆕 New Orders")
-            st.dataframe(orders_df[get_columns(orders_df, prod_keys)])
+            st.write("### 🆕 Orders")
+            st.dataframe(orders_df[get_columns(orders_df, keys)])
 
-            st.write("### 🔁 Returned Orders")
-            st.dataframe(merged_df[get_columns(merged_df, prod_keys)])
+            st.write("### 🔁 Returns")
+            st.dataframe(merged_df[get_columns(merged_df, keys)])
 
         # -----------------------------
-        # SHIPPING VIEW
+        # SHIPPING
         # -----------------------------
         elif role == "Shipping":
 
             st.subheader("🚚 Shipping View")
 
-            ship_keys = [
+            keys = [
                 "order", "product", "address", "city",
                 "state", "zip", "buyer", "email",
                 "phone", "ship"
             ]
 
-            shipping_df = merged_df[get_columns(merged_df, ship_keys)].copy()
+            shipping_df = merged_df[get_columns(merged_df, keys)].copy()
 
-            # Add Status Column
+            # Add Status from DB
             shipping_df["Status"] = shipping_df.apply(
-                lambda x: get_status(x.get("order-id", "NA")), axis=1
+                lambda x: get_status(x.get("order-id", "NA")),
+                axis=1
             )
 
             st.dataframe(shipping_df)
@@ -147,60 +161,44 @@ if orders_file and returns_file:
                 with col4:
                     st.write(get_status(order_id))
 
-            # -----------------------------
-            # COURIER COMPARISON
-            # -----------------------------
-            st.subheader("🚛 Courier Comparison")
-
-            base_cost = 100  # dummy base
-
-            shipping_df["FedEx Cost"] = base_cost * 1.1
-            shipping_df["DHL Cost"] = base_cost * 1.2
-
-            shipping_df["Best Option"] = shipping_df.apply(
-                lambda x: "FedEx" if x["FedEx Cost"] < x["DHL Cost"] else "DHL",
-                axis=1
-            )
-
-            st.dataframe(shipping_df[["FedEx Cost", "DHL Cost", "Best Option"]])
-
         # -----------------------------
         # REPORT
         # -----------------------------
-        st.subheader("📄 Generate Report")
+        st.subheader("📄 Report")
 
         total_orders = len(orders_df)
         total_returns = len(merged_df)
 
-        produced = list(st.session_state.status_dict.values()).count("Produced")
-        shipped = list(st.session_state.status_dict.values()).count("Shipped")
+        cursor.execute("SELECT COUNT(*) FROM status_table WHERE status='Produced'")
+        produced = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM status_table WHERE status='Shipped'")
+        shipped = cursor.fetchone()[0]
 
         report = f"""
-CARPET EXPORT DASHBOARD REPORT
+CARPET DASHBOARD REPORT
 
-Total Orders: {total_orders}
-Total Returns: {total_returns}
+Orders: {total_orders}
+Returns: {total_returns}
 
 Produced: {produced}
 Shipped: {shipped}
 Pending: {total_orders - shipped}
-
-System Generated Report
 """
 
-        st.text_area("Report Preview", report, height=200)
+        st.text_area("Report Preview", report)
 
         st.download_button(
-            label="⬇️ Download Report",
-            data=report,
-            file_name="carpet_report.txt"
+            "⬇️ Download Report",
+            report,
+            file_name="report.txt"
         )
 
-        st.success("✅ Full System Running")
+        st.success("✅ Data is now persistent!")
 
     except Exception as e:
-        st.error("🚨 Error occurred")
+        st.error("🚨 Error")
         st.write(e)
 
 else:
-    st.warning("👆 Upload both files to continue")
+    st.warning("Upload both files")
