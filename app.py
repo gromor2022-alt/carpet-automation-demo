@@ -23,13 +23,19 @@ def load_orders(file):
     return pd.read_csv(file)
 
 def load_returns(file):
-    return pd.read_csv(file, header=1)  # important fix
+    return pd.read_csv(file, header=1)
 
 def safe_df(df):
     df = df.head(300)
     for col in df.columns:
         df[col] = df[col].astype(str)
     return df
+
+def get_columns(df, keywords):
+    return [
+        col for col in df.columns
+        if any(k in col.lower() for k in keywords)
+    ]
 
 # -----------------------------
 # MAIN
@@ -39,18 +45,15 @@ if orders_file and returns_file:
     st.success("Files uploaded ✅")
 
     try:
-        # Load data
-        orders_df = load_orders(orders_file)
-        returns_df = load_returns(returns_file)
-
-        orders_df = safe_df(orders_df)
-        returns_df = safe_df(returns_df)
+        # Load
+        orders_df = safe_df(load_orders(orders_file))
+        returns_df = safe_df(load_returns(returns_file))
 
         # Fixed columns
         orders_col = "order-id"
         returns_col = "Order ID (Hide)"
 
-        # Merge for returns
+        # Merge returns with orders
         merged_df = pd.merge(
             returns_df,
             orders_df,
@@ -62,29 +65,32 @@ if orders_file and returns_file:
         merged_df = safe_df(merged_df)
 
         # -----------------------------
+        # ADMIN VIEW
+        # -----------------------------
+        if role == "Admin":
+
+            st.subheader("👨‍💼 Admin View")
+
+            st.write("### 🆕 New Orders")
+            st.dataframe(orders_df)
+
+            st.write("### 🔁 Returned Orders")
+            st.dataframe(merged_df)
+
+        # -----------------------------
         # PRODUCTION VIEW
         # -----------------------------
-        if role == "Production":
+        elif role == "Production":
 
             st.subheader("🏭 Production View")
 
+            prod_keys = ["order", "product", "quantity", "ship", "date"]
+
             st.write("### 🆕 New Orders")
-
-            prod_orders_cols = [
-                col for col in orders_df.columns
-                if any(x in col.lower() for x in ["order", "product", "quantity", "ship", "date"])
-            ]
-
-            st.dataframe(orders_df[prod_orders_cols])
+            st.dataframe(orders_df[get_columns(orders_df, prod_keys)])
 
             st.write("### 🔁 Returned Orders")
-
-            prod_returns_cols = [
-                col for col in merged_df.columns
-                if any(x in col.lower() for x in ["order", "product", "quantity", "ship", "date"])
-            ]
-
-            st.dataframe(merged_df[prod_returns_cols])
+            st.dataframe(merged_df[get_columns(merged_df, prod_keys)])
 
         # -----------------------------
         # SHIPPING VIEW
@@ -93,39 +99,42 @@ if orders_file and returns_file:
 
             st.subheader("🚚 Shipping View")
 
-            st.write("### 🆕 New Orders")
-
-            ship_orders_cols = [
-                col for col in orders_df.columns
-                if any(x in col.lower() for x in [
-                    "order", "product", "address", "city",
-                    "state", "zip", "buyer", "email",
-                    "phone", "ship"
-                ])
+            ship_keys = [
+                "order", "product", "address", "city",
+                "state", "zip", "buyer", "email",
+                "phone", "ship"
             ]
 
-            st.dataframe(orders_df[ship_orders_cols])
+            st.write("### 🆕 New Orders")
+            st.dataframe(orders_df[get_columns(orders_df, ship_keys)])
 
             st.write("### 🔁 Returned Orders")
-
-            ship_returns_cols = [
-                col for col in merged_df.columns
-                if any(x in col.lower() for x in [
-                    "order", "product", "address", "city",
-                    "state", "zip", "buyer", "email",
-                    "phone", "ship"
-                ])
-            ]
-
-            st.dataframe(merged_df[ship_returns_cols])
+            st.dataframe(merged_df[get_columns(merged_df, ship_keys)])
 
         # -----------------------------
-        # ADMIN VIEW
+        # REPORT GENERATION
         # -----------------------------
-        else:
+        st.subheader("📄 Generate Report")
 
-            st.subheader("📊 Admin View")
-            st.dataframe(merged_df)
+        total_orders = len(orders_df)
+        total_returns = len(merged_df)
+
+        report = f"""
+CARPET EXPORT DASHBOARD REPORT
+
+Total New Orders: {total_orders}
+Total Returns: {total_returns}
+
+Generated from system.
+"""
+
+        st.text_area("Report Preview", report, height=200)
+
+        st.download_button(
+            label="⬇️ Download Report",
+            data=report,
+            file_name="carpet_report.txt"
+        )
 
         st.success("✅ System Running Perfectly")
 
