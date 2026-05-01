@@ -55,7 +55,44 @@ if orders_file and returns_file:
         st.dataframe(returns_df.head(50))
 
         # FAKE MERGE JUST TO TEST STABILITY
-        merged_df = pd.concat([returns_df, orders_df], axis=1)
+        # -----------------------------
+# SAFE MERGE
+# -----------------------------
+
+def find_order_column(df):
+    for col in df.columns:
+        col_clean = str(col).lower().replace("-", "").replace("_", "")
+        if "order" in col_clean and "id" in col_clean:
+            return col
+    return None
+
+orders_col = find_order_column(orders_df)
+returns_col = find_order_column(returns_df)
+
+st.write("Orders Order ID:", orders_col)
+st.write("Returns Order ID:", returns_col)
+
+if orders_col and returns_col:
+
+    merged_df = pd.merge(
+        returns_df,
+        orders_df,
+        left_on=returns_col,
+        right_on=orders_col,
+        how="left"
+    )
+
+    merged_df = merged_df.head(200)  # 🔥 LIMIT DATA
+
+    # convert all to string (avoid crash)
+    for col in merged_df.columns:
+        merged_df[col] = merged_df[col].astype(str)
+
+    st.subheader("Merged Data")
+    st.dataframe(merged_df.head(50))
+
+else:
+    st.error("❌ Could not find Order ID column")
 
         merged_df = safe_df(merged_df)
 
