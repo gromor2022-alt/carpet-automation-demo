@@ -8,51 +8,63 @@ st.title("📊 Carpet Order & Return Dashboard")
 # -----------------------------
 # FILE UPLOAD
 # -----------------------------
-
 st.subheader("📤 Upload Your Reports")
 
 orders_file = st.file_uploader("Upload Orders File (Amazon/Shopify)", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
+# -----------------------------
+# LOAD FILE (AUTO DETECT FORMAT)
+# -----------------------------
+def load_file(file):
+    for sep in ["\t", ","]:
+        try:
+            file.seek(0)
+            df = pd.read_csv(file, sep=sep)
+            if len(df.columns) > 1:
+                return df
+        except:
+            continue
+    file.seek(0)
+    return pd.read_csv(file)
+
+# -----------------------------
+# FIX HEADER (AUTO DETECT)
+# -----------------------------
+def fix_header(df):
+    for i in range(min(5, len(df))):
+        row = df.iloc[i].astype(str).str.lower()
+        if row.str.contains("order").any():
+            df.columns = df.iloc[i]
+            df = df[i+1:]
+            break
+    return df.reset_index(drop=True)
+
+# -----------------------------
+# FIND ORDER COLUMN
+# -----------------------------
+def find_order_column(df):
+    for col in df.columns:
+        col_clean = str(col).lower().replace("-", "").replace("_", "")
+        if "order" in col_clean and "id" in col_clean:
+            return col
+    return None
+
 if orders_file and returns_file:
 
-    # -----------------------------
-    # LOAD ORDERS FILE (AUTO DETECT FORMAT)
-    # -----------------------------
-    try:
-        # Try Amazon format (tab-separated)
-        orders_df = pd.read_csv(orders_file, sep="\t")
-        if len(orders_df.columns) == 1:
-            raise Exception("Wrong format")
-    except:
-        orders_file.seek(0)
-        orders_df = pd.read_csv(orders_file)
+    # Load files
+    orders_df = load_file(orders_file)
+    returns_df = load_file(returns_file)
 
-    # -----------------------------
-    # LOAD RETURNS FILE
-    # -----------------------------
-    try:
-        returns_df = pd.read_csv(returns_file)
-    except:
-        st.error("❌ Error reading returns file")
-        st.stop()
+    # Fix headers
+    orders_df = fix_header(orders_df)
+    returns_df = fix_header(returns_df)
 
-    # -----------------------------
-    # CLEAN COLUMN NAMES
-    # -----------------------------
+    # Clean column names
     orders_df.columns = orders_df.columns.astype(str).str.strip()
     returns_df.columns = returns_df.columns.astype(str).str.strip()
 
-    # -----------------------------
-    # FIND ORDER ID COLUMNS (ROBUST)
-    # -----------------------------
-    def find_order_column(df):
-        for col in df.columns:
-            col_clean = col.lower().replace("-", "").replace("_", "")
-            if "order" in col_clean and "id" in col_clean:
-                return col
-        return None
-
+    # Detect order columns
     orders_order_col = find_order_column(orders_df)
     returns_order_col = find_order_column(returns_df)
 
@@ -64,7 +76,7 @@ if orders_file and returns_file:
         st.stop()
 
     # -----------------------------
-    # MERGE DATA
+    # MERGE
     # -----------------------------
     merged_df = pd.merge(
         returns_df,
@@ -78,9 +90,10 @@ if orders_file and returns_file:
     # STATUS LOGIC
     # -----------------------------
     def get_status(row):
-        if "tracking" in str(row).lower():
+        row_str = str(row).lower()
+        if "tracking" in row_str:
             return "In Transit"
-        elif "return" in str(row).lower():
+        elif "return" in row_str:
             return "Return Initiated"
         else:
             return "Pending"
@@ -90,7 +103,7 @@ if orders_file and returns_file:
     clean_df = merged_df.copy()
 
     # -----------------------------
-    # DASHBOARD METRICS
+    # DASHBOARD
     # -----------------------------
     st.subheader("📊 Daily Summary")
 
@@ -107,32 +120,25 @@ if orders_file and returns_file:
     col4.metric("Initiated", initiated)
 
     # -----------------------------
-    # DAILY REPORT
+    # REPORT
     # -----------------------------
     st.subheader("📩 Daily Report")
 
-    # Safe cost calculation
     total_cost = 0
-    if "return cost" in [c.lower() for c in clean_df.columns]:
-        col = [c for c in clean_df.columns if "return cost" in c.lower()][0]
-        total_cost = pd.to_numeric(clean_df[col], errors="coerce").fillna(0).sum()
-
-    # Safe carrier
-    carrier_col = None
     for col in clean_df.columns:
-        if "carrier" in col.lower():
-            carrier_col = col
+        if "cost" in col.lower():
+            total_cost = pd.to_numeric(clean_df[col], errors="coerce").fillna(0).sum()
             break
 
-    if carrier_col and not clean_df[carrier_col].mode().empty:
-        top_carrier = clean_df[carrier_col].mode()[0]
-    else:
-        top_carrier = "N/A"
+    top_carrier = "N/A"
+    for col in clean_df.columns:
+        if "carrier" in col.lower():
+            if not clean_df[col].mode().empty:
+                top_carrier = clean_df[col].mode()[0]
+            break
 
-    # Paid by counts
     seller_count = 0
     customer_count = 0
-
     for col in clean_df.columns:
         if "paid" in col.lower():
             seller_count = len(clean_df[clean_df[col] == "Seller"])
@@ -160,9 +166,9 @@ Customer: {customer_count}
     st.download_button("⬇️ Download Report", report, file_name="daily_report.txt")
 
     # -----------------------------
-    # FINAL TABLE
+    # TABLE
     # -----------------------------
-    st.subheader("📊 Clean Dashboard View")
+    st.subheader("📊 Data View")
     st.dataframe(clean_df)
 
 else:
