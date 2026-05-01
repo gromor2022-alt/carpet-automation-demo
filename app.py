@@ -5,6 +5,8 @@ st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
 st.title("📊 Carpet Dashboard")
 
+role = st.selectbox("Select Role", ["Admin", "Production", "Shipping"])
+
 orders_file = st.file_uploader("Upload Orders File", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
@@ -58,6 +60,33 @@ if orders_file and returns_file:
         merged_df = pd.concat([returns_df, orders_df], axis=1)
 
         merged_df = safe_df(merged_df)
+        
+        # -----------------------------
+# PRODUCTION VIEW
+# -----------------------------
+
+if role == "Production":
+
+    st.subheader("🏭 Production View")
+
+    # Select only safe columns
+    production_columns = []
+
+    for col in merged_df.columns:
+        col_lower = col.lower()
+
+        if (
+            "order" in col_lower or
+            "product" in col_lower or
+            "quantity" in col_lower or
+            "ship" in col_lower or
+            "date" in col_lower
+        ):
+            production_columns.append(col)
+
+    production_df = merged_df[production_columns].head(200)
+
+    st.dataframe(production_df)
 
         st.subheader("Merged Preview")
         st.dataframe(merged_df.head(50))
