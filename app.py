@@ -102,6 +102,21 @@ if orders_file and returns_file:
 
     clean_df = merged_df.copy()
 
+# Safe duplicate column fix
+def make_unique(cols):
+    seen = {}
+    new_cols = []
+    for col in cols:
+        if col in seen:
+            seen[col] += 1
+            new_cols.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            new_cols.append(col)
+    return new_cols
+
+clean_df.columns = make_unique(clean_df.columns)
+
     # -----------------------------
     # DASHBOARD
     # -----------------------------
