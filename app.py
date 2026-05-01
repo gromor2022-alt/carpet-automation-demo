@@ -4,17 +4,11 @@ import pandas as pd
 st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
 st.title("📊 Carpet Automation Dashboard")
-st.write("🚀 App Loaded")
 
-# -----------------------------
-# UPLOAD
-# -----------------------------
+# Upload
 orders_file = st.file_uploader("Upload Orders File", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
-# -----------------------------
-# HELPERS
-# -----------------------------
 def load_file(file):
     for sep in ["\t", ","]:
         try:
@@ -55,30 +49,28 @@ def make_unique(cols):
             new_cols.append(col)
     return new_cols
 
-# -----------------------------
-# MAIN
-# -----------------------------
 if orders_file and returns_file:
 
-    try:
-        st.success("Files uploaded ✅")
+    st.success("Files uploaded ✅")
 
-        # Load
+    try:
+        # STEP 1: Load
         orders_df = load_file(orders_file)
         returns_df = load_file(returns_file)
 
-        # Fix header
+        st.write("Step 1: Files Loaded")
+
+        # STEP 2: Fix headers
         orders_df = fix_header(orders_df)
         returns_df = fix_header(returns_df)
 
-        # Clean columns
+        st.write("Step 2: Headers Fixed")
+
+        # STEP 3: Clean columns
         orders_df.columns = orders_df.columns.astype(str).str.strip()
         returns_df.columns = returns_df.columns.astype(str).str.strip()
 
-        st.write("Orders Columns:", list(orders_df.columns))
-        st.write("Returns Columns:", list(returns_df.columns))
-
-        # Detect columns
+        # STEP 4: Detect order column
         orders_col = find_order_column(orders_df)
         returns_col = find_order_column(returns_df)
 
@@ -89,7 +81,7 @@ if orders_file and returns_file:
             st.error("❌ Order ID column not found")
             st.stop()
 
-        # Merge
+        # STEP 5: Merge
         merged_df = pd.merge(
             returns_df,
             orders_df,
@@ -98,33 +90,25 @@ if orders_file and returns_file:
             how="left"
         )
 
-        # Fix duplicates
         merged_df.columns = make_unique(merged_df.columns)
 
-        clean_df = merged_df.copy()
+        st.write("Step 3: Merge Done")
 
-        st.subheader("🔍 Preview (Safe)")
-        st.dataframe(clean_df.head(100))  # avoid crash
+        # LIMIT DATA (IMPORTANT)
+        clean_df = merged_df.head(500)
 
-        # STATUS
-        def get_status(row):
-            text = str(row).lower()
-            if "tracking" in text:
-                return "In Transit"
-            elif "return" in text:
-                return "Return Initiated"
-            else:
-                return "Pending"
+        # STEP 6: Status (LIGHT VERSION)
+        clean_df["Status"] = "Pending"
 
-        clean_df["Status"] = clean_df.apply(get_status, axis=1)
+        st.write("Step 4: Status Added")
 
         # DASHBOARD
         st.subheader("📊 Summary")
 
         total = len(clean_df)
-        transit = len(clean_df[clean_df["Status"] == "In Transit"])
-        pending = len(clean_df[clean_df["Status"] == "Pending"])
-        initiated = len(clean_df[clean_df["Status"] == "Return Initiated"])
+        transit = 0
+        pending = total
+        initiated = 0
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total", total)
@@ -143,22 +127,18 @@ if orders_file and returns_file:
 
         report = f"""
 Total: {total}
-Transit: {transit}
-Pending: {pending}
-Initiated: {initiated}
 Cost: ${total_cost:.2f}
 """
 
         st.text_area("Report", report)
-        st.download_button("Download Report", report)
 
-        # FINAL TABLE (limited rows to avoid crash)
-        st.subheader("📊 Data View")
-        st.dataframe(clean_df.head(300))
+        # TABLE
+        st.subheader("📊 Data Preview (Limited)")
+        st.dataframe(clean_df)
 
     except Exception as e:
-        st.error("🚨 Something broke (but we caught it)")
+        st.error("🚨 Error detected")
         st.write(str(e))
 
 else:
-    st.warning("👆 Upload BOTH files to start")
+    st.warning("👆 Upload BOTH files")
