@@ -17,21 +17,48 @@ returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 if orders_file and returns_file:
 
     # -----------------------------
-    # LOAD DATA
+    # LOAD DATA (safe)
     # -----------------------------
-    orders_df = pd.read_csv(orders_file, header=1)
-    returns_df = pd.read_csv(returns_file, header=0)
+    try:
+        orders_df = pd.read_csv(orders_file, header=1)
+    except:
+        orders_df = pd.read_csv(orders_file)
 
-    # Clean column names
+    try:
+        returns_df = pd.read_csv(returns_file)
+    except:
+        st.error("❌ Error reading returns file")
+        st.stop()
+
+    # -----------------------------
+    # CLEAN COLUMN NAMES
+    # -----------------------------
     orders_df.columns = orders_df.columns.astype(str).str.strip()
     returns_df.columns = returns_df.columns.astype(str).str.strip()
 
     # -----------------------------
-    # MERGE (using column position)
+    # FIND ORDER ID COLUMNS (SAFE)
     # -----------------------------
-    orders_order_col = orders_df.columns[2]   # Order ID
-    returns_order_col = returns_df.columns[0]  # Order ID (Hide)
+    def find_order_column(df):
+        for col in df.columns:
+            col_clean = col.lower()
+            if "order" in col_clean and "id" in col_clean:
+                return col
+        return None
 
+    orders_order_col = find_order_column(orders_df)
+    returns_order_col = find_order_column(returns_df)
+
+    st.write("📌 Orders Order ID Column:", orders_order_col)
+    st.write("📌 Returns Order ID Column:", returns_order_col)
+
+    if not orders_order_col or not returns_order_col:
+        st.error("❌ Could not detect Order ID columns. Please check file format.")
+        st.stop()
+
+    # -----------------------------
+    # MERGE DATA
+    # -----------------------------
     merged_df = pd.merge(
         returns_df,
         orders_df,
@@ -54,18 +81,15 @@ if orders_file and returns_file:
     merged_df["Status"] = merged_df.apply(get_status, axis=1)
 
     # -----------------------------
-    # CLEAN VIEW
+    # CLEAN VIEW (safe rename)
     # -----------------------------
-    clean_df = merged_df.rename(columns={
-        "Unnamed: 0_x": "Order ID",
-        "Unnamed: 1_x": "Order Date",
-        "RETURN DETAILS": "Return Date",
-        "Unnamed: 3_x": "RMA ID",
-        "Unnamed: 4_x": "Return Cost",
-        "Unnamed: 5_x": "Carrier",
-        "Unnamed: 6_x": "Tracking ID",
-        "Unnamed: 7_x": "Paid By"
-    })
+    rename_map = {
+        "Return Cost": "Return Cost",
+        "Carrier": "Carrier",
+        "Paid By": "Paid By"
+    }
+
+    clean_df = merged_df.rename(columns=rename_map)
 
     # -----------------------------
     # DASHBOARD METRICS
@@ -89,16 +113,18 @@ if orders_file and returns_file:
     # -----------------------------
     st.subheader("📩 Daily Report")
 
-    total_cost = pd.to_numeric(clean_df["Return Cost"], errors="coerce").fillna(0).sum()
+    if "Return Cost" in clean_df.columns:
+        total_cost = pd.to_numeric(clean_df["Return Cost"], errors="coerce").fillna(0).sum()
+    else:
+        total_cost = 0
 
-    top_carrier = (
-        clean_df["Carrier"].mode()[0]
-        if not clean_df["Carrier"].mode().empty
-        else "N/A"
-    )
+    if "Carrier" in clean_df.columns and not clean_df["Carrier"].mode().empty:
+        top_carrier = clean_df["Carrier"].mode()[0]
+    else:
+        top_carrier = "N/A"
 
-    seller_count = len(clean_df[clean_df["Paid By"] == "Seller"])
-    customer_count = len(clean_df[clean_df["Paid By"] == "Customer"])
+    seller_count = len(clean_df[clean_df.get("Paid By", "") == "Seller"])
+    customer_count = len(clean_df[clean_df.get("Paid By", "") == "Customer"])
 
     report = f"""
 📊 DAILY RETURNS SUMMARY
@@ -118,7 +144,6 @@ Customer: {customer_count}
 """
 
     st.text_area("Report Preview", report, height=250)
-
     st.download_button("⬇️ Download Report", report, file_name="daily_report.txt")
 
     # -----------------------------
