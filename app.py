@@ -3,11 +3,17 @@ import pandas as pd
 
 st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
-st.title("📊 Carpet Dashboard")
+st.title("📊 Carpet Automation Dashboard")
 
+# -----------------------------
+# FILE UPLOAD
+# -----------------------------
 orders_file = st.file_uploader("Upload Orders File", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
+# -----------------------------
+# HELPERS
+# -----------------------------
 def load_file(file):
     for sep in ["\t", ","]:
         try:
@@ -20,45 +26,6 @@ def load_file(file):
     file.seek(0)
     return pd.read_csv(file)
 
-def safe_df(df):
-    # LIMIT SIZE (CRITICAL)
-    df = df.head(200)
-
-    # Convert everything to string (avoid Arrow crash)
-    for col in df.columns:
-        df[col] = df[col].astype(str)
-
-    return df
-
-if orders_file and returns_file:
-
-    st.success("Files uploaded ✅")
-
-    try:
-        orders_df = load_file(orders_file)
-        returns_df = load_file(returns_file)
-
-        st.write("Files Loaded")
-
-        # SIMPLE MERGE (no fancy logic yet)
-        orders_df = safe_df(orders_df)
-        returns_df = safe_df(returns_df)
-
-        st.write("Orders Shape:", orders_df.shape)
-        st.write("Returns Shape:", returns_df.shape)
-
-        # Show only small preview
-        st.subheader("Orders Preview")
-        st.dataframe(orders_df.head(50))
-
-        st.subheader("Returns Preview")
-        st.dataframe(returns_df.head(50))
-
-        # FAKE MERGE JUST TO TEST STABILITY
-        # -----------------------------
-# SAFE MERGE
-# -----------------------------
-
 def find_order_column(df):
     for col in df.columns:
         col_clean = str(col).lower().replace("-", "").replace("_", "")
@@ -66,44 +33,62 @@ def find_order_column(df):
             return col
     return None
 
-orders_col = find_order_column(orders_df)
-returns_col = find_order_column(returns_df)
+def safe_df(df):
+    df = df.head(200)  # limit rows (important)
+    for col in df.columns:
+        df[col] = df[col].astype(str)
+    return df
 
-st.write("Orders Order ID:", orders_col)
-st.write("Returns Order ID:", returns_col)
+# -----------------------------
+# MAIN
+# -----------------------------
+if orders_file and returns_file:
 
-if orders_col and returns_col:
+    st.success("Files uploaded ✅")
 
-    merged_df = pd.merge(
-        returns_df,
-        orders_df,
-        left_on=returns_col,
-        right_on=orders_col,
-        how="left"
-    )
+    try:
+        # Load
+        orders_df = load_file(orders_file)
+        returns_df = load_file(returns_file)
 
-    merged_df = merged_df.head(200)  # 🔥 LIMIT DATA
+        st.write("Files Loaded")
 
-    # convert all to string (avoid crash)
-    for col in merged_df.columns:
-        merged_df[col] = merged_df[col].astype(str)
+        # Make safe (limit + type)
+        orders_df = safe_df(orders_df)
+        returns_df = safe_df(returns_df)
 
-    st.subheader("Merged Data")
-    st.dataframe(merged_df.head(50))
+        # Detect columns
+        orders_col = find_order_column(orders_df)
+        returns_col = find_order_column(returns_df)
 
-else:
-    st.error("❌ Could not find Order ID column")
+        st.write("Orders Order ID:", orders_col)
+        st.write("Returns Order ID:", returns_col)
+
+        if not orders_col or not returns_col:
+            st.error("❌ Order ID column not found")
+            st.stop()
+
+        # -----------------------------
+        # MERGE
+        # -----------------------------
+        merged_df = pd.merge(
+            returns_df,
+            orders_df,
+            left_on=returns_col,
+            right_on=orders_col,
+            how="left"
+        )
 
         merged_df = safe_df(merged_df)
 
-        st.subheader("Merged Preview")
+        st.subheader("📊 Merged Preview")
         st.dataframe(merged_df.head(50))
 
-        st.success("✅ App Stable (No Crash)")
+        st.success("✅ Merge Working (Stable)")
 
     except Exception as e:
-        st.error("🚨 Error")
-        st.write(e)
+        st.error("🚨 Error occurred")
+        st.write(str(e))
 
 else:
-    st.warning("Upload both files")
+    st.warning("👆 Upload BOTH files to continue")
