@@ -1,14 +1,20 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Carpet Automation Dashboard", layout="wide")
+st.set_page_config(page_title="Carpet Dashboard", layout="wide")
 
-st.title("📊 Carpet Order & Return Dashboard")
+st.title("📊 Carpet Automation Dashboard")
+st.write("🚀 App Loaded")
 
-# Upload
+# -----------------------------
+# UPLOAD
+# -----------------------------
 orders_file = st.file_uploader("Upload Orders File", type=["csv"])
 returns_file = st.file_uploader("Upload Returns File", type=["csv"])
 
+# -----------------------------
+# HELPERS
+# -----------------------------
 def load_file(file):
     for sep in ["\t", ","]:
         try:
@@ -49,77 +55,93 @@ def make_unique(cols):
             new_cols.append(col)
     return new_cols
 
-# MAIN LOGIC
+# -----------------------------
+# MAIN
+# -----------------------------
 if orders_file and returns_file:
 
-    orders_df = load_file(orders_file)
-    returns_df = load_file(returns_file)
+    try:
+        st.success("Files uploaded ✅")
 
-    orders_df = fix_header(orders_df)
-    returns_df = fix_header(returns_df)
+        # Load
+        orders_df = load_file(orders_file)
+        returns_df = load_file(returns_file)
 
-    orders_df.columns = orders_df.columns.astype(str).str.strip()
-    returns_df.columns = returns_df.columns.astype(str).str.strip()
+        # Fix header
+        orders_df = fix_header(orders_df)
+        returns_df = fix_header(returns_df)
 
-    orders_col = find_order_column(orders_df)
-    returns_col = find_order_column(returns_df)
+        # Clean columns
+        orders_df.columns = orders_df.columns.astype(str).str.strip()
+        returns_df.columns = returns_df.columns.astype(str).str.strip()
 
-    st.write("Orders Order ID:", orders_col)
-    st.write("Returns Order ID:", returns_col)
+        st.write("Orders Columns:", list(orders_df.columns))
+        st.write("Returns Columns:", list(returns_df.columns))
 
-    if not orders_col or not returns_col:
-        st.error("❌ Order ID column not found")
-        st.stop()
+        # Detect columns
+        orders_col = find_order_column(orders_df)
+        returns_col = find_order_column(returns_df)
 
-    merged_df = pd.merge(
-        returns_df,
-        orders_df,
-        left_on=returns_col,
-        right_on=orders_col,
-        how="left"
-    )
+        st.write("Orders Order ID:", orders_col)
+        st.write("Returns Order ID:", returns_col)
 
-    # Fix duplicate columns
-    merged_df.columns = make_unique(merged_df.columns)
+        if not orders_col or not returns_col:
+            st.error("❌ Order ID column not found")
+            st.stop()
 
-    clean_df = merged_df.copy()
+        # Merge
+        merged_df = pd.merge(
+            returns_df,
+            orders_df,
+            left_on=returns_col,
+            right_on=orders_col,
+            how="left"
+        )
 
-    # STATUS
-    def get_status(row):
-        text = str(row).lower()
-        if "tracking" in text:
-            return "In Transit"
-        elif "return" in text:
-            return "Return Initiated"
-        else:
-            return "Pending"
+        # Fix duplicates
+        merged_df.columns = make_unique(merged_df.columns)
 
-    clean_df["Status"] = clean_df.apply(get_status, axis=1)
+        clean_df = merged_df.copy()
 
-    # DASHBOARD
-    st.subheader("📊 Daily Summary")
+        st.subheader("🔍 Preview (Safe)")
+        st.dataframe(clean_df.head(100))  # avoid crash
 
-    total = len(clean_df)
-    transit = len(clean_df[clean_df["Status"] == "In Transit"])
-    pending = len(clean_df[clean_df["Status"] == "Pending"])
-    initiated = len(clean_df[clean_df["Status"] == "Return Initiated"])
+        # STATUS
+        def get_status(row):
+            text = str(row).lower()
+            if "tracking" in text:
+                return "In Transit"
+            elif "return" in text:
+                return "Return Initiated"
+            else:
+                return "Pending"
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total", total)
-    c2.metric("Transit", transit)
-    c3.metric("Pending", pending)
-    c4.metric("Initiated", initiated)
+        clean_df["Status"] = clean_df.apply(get_status, axis=1)
 
-    # REPORT
-    st.subheader("📩 Report")
+        # DASHBOARD
+        st.subheader("📊 Summary")
 
-    total_cost = 0
-    for col in clean_df.columns:
-        if "cost" in col.lower():
-            total_cost = pd.to_numeric(clean_df[col], errors="coerce").fillna(0).sum()
-            break
+        total = len(clean_df)
+        transit = len(clean_df[clean_df["Status"] == "In Transit"])
+        pending = len(clean_df[clean_df["Status"] == "Pending"])
+        initiated = len(clean_df[clean_df["Status"] == "Return Initiated"])
 
-    report = f"""
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total", total)
+        c2.metric("Transit", transit)
+        c3.metric("Pending", pending)
+        c4.metric("Initiated", initiated)
+
+        # REPORT
+        total_cost = 0
+        for col in clean_df.columns:
+            if "cost" in col.lower():
+                total_cost = pd.to_numeric(clean_df[col], errors="coerce").fillna(0).sum()
+                break
+
+        st.subheader("📩 Report")
+
+        report = f"""
 Total: {total}
 Transit: {transit}
 Pending: {pending}
@@ -127,12 +149,16 @@ Initiated: {initiated}
 Cost: ${total_cost:.2f}
 """
 
-    st.text_area("Report", report)
-    st.download_button("Download Report", report)
+        st.text_area("Report", report)
+        st.download_button("Download Report", report)
 
-    # TABLE
-    st.subheader("📊 Data")
-    st.dataframe(clean_df)
+        # FINAL TABLE (limited rows to avoid crash)
+        st.subheader("📊 Data View")
+        st.dataframe(clean_df.head(300))
+
+    except Exception as e:
+        st.error("🚨 Something broke (but we caught it)")
+        st.write(str(e))
 
 else:
-    st.info("Upload both files to continue")
+    st.warning("👆 Upload BOTH files to start")
