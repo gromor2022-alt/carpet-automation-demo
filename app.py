@@ -5,17 +5,23 @@ from datetime import datetime
 import plotly.express as px
 from reportlab.pdfgen import canvas
 import tempfile
-import base64
 
-# ---------------------------------
+# -----------------------------------
 # PAGE CONFIG
-# ---------------------------------
-st.set_page_config(page_title="Exporter Operations SaaS", layout="wide")
+# -----------------------------------
+st.set_page_config(
+    page_title="Exporter Operations SaaS",
+    layout="wide"
+)
 
-# ---------------------------------
+# -----------------------------------
 # DATABASE
-# ---------------------------------
-conn = sqlite3.connect("carpet.db", check_same_thread=False)
+# -----------------------------------
+conn = sqlite3.connect(
+    "carpet.db",
+    check_same_thread=False
+)
+
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -31,34 +37,49 @@ CREATE TABLE IF NOT EXISTS orders_status (
 
 conn.commit()
 
-# ---------------------------------
-# LOGIN USERS
-# ---------------------------------
+# -----------------------------------
+# USERS
+# -----------------------------------
 users = {
-    "admin": {"password": "123", "role": "Admin"},
-    "prod": {"password": "123", "role": "Production"},
-    "ship": {"password": "123", "role": "Shipping"}
+    "admin": {
+        "password": "123",
+        "role": "Admin"
+    },
+    "prod": {
+        "password": "123",
+        "role": "Production"
+    },
+    "ship": {
+        "password": "123",
+        "role": "Shipping"
+    }
 }
 
-# ---------------------------------
+# -----------------------------------
 # SESSION
-# ---------------------------------
+# -----------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# ---------------------------------
+# -----------------------------------
 # LOGIN PAGE
-# ---------------------------------
+# -----------------------------------
 if not st.session_state.logged_in:
 
     st.title("🔐 Export Operations Login")
 
     username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    password = st.text_input(
+        "Password",
+        type="password"
+    )
 
     if st.button("Login"):
 
-        if username in users and users[username]["password"] == password:
+        if (
+            username in users and
+            users[username]["password"] == password
+        ):
 
             st.session_state.logged_in = True
             st.session_state.username = username
@@ -72,9 +93,9 @@ if not st.session_state.logged_in:
 
     st.stop()
 
-# ---------------------------------
-# MAIN APP
-# ---------------------------------
+# -----------------------------------
+# HEADER
+# -----------------------------------
 st.title("📊 Export Operations SaaS")
 
 st.write(
@@ -83,17 +104,29 @@ st.write(
     f"({st.session_state.role})**"
 )
 
-# ---------------------------------
-# CLIENT SELECTOR
-# ---------------------------------
+# -----------------------------------
+# LOGOUT
+# -----------------------------------
+if st.button("Logout"):
+
+    st.session_state.logged_in = False
+    st.rerun()
+
+# -----------------------------------
+# CLIENT SELECT
+# -----------------------------------
 client_name = st.selectbox(
     "Select Client",
-    ["Exporter A", "Exporter B", "Exporter C"]
+    [
+        "Exporter A",
+        "Exporter B",
+        "Exporter C"
+    ]
 )
 
-# ---------------------------------
+# -----------------------------------
 # FILE UPLOAD
-# ---------------------------------
+# -----------------------------------
 orders_file = st.file_uploader(
     "Upload Orders File",
     type=["csv"]
@@ -104,48 +137,57 @@ returns_file = st.file_uploader(
     type=["csv"]
 )
 
-# ---------------------------------
+# -----------------------------------
 # HELPERS
-# ---------------------------------
+# -----------------------------------
 def clean_df(df):
 
-    df.columns = [str(col).strip() for col in df.columns]
-
-    for col in df.columns:
-        df[col] = df[col].astype(str)
+    df.columns = [
+        str(col).strip()
+        for col in df.columns
+    ]
 
     return df
 
 
 def get_status(order_id):
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT status
         FROM orders_status
         WHERE client=? AND order_id=?
-        """,
-        (client_name, order_id)
-    )
+    """, (
+        client_name,
+        order_id
+    ))
 
     result = cursor.fetchone()
 
-    return result[0] if result else "Order Received"
+    if result:
+        return result[0]
+
+    return "Order Received"
 
 
-def update_status(order_id, status, reason=""):
+def update_status(
+    order_id,
+    status,
+    reason=""
+):
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     cursor.execute("""
-        INSERT INTO orders_status
-        (
+        INSERT INTO orders_status (
             client,
             order_id,
             status,
             delay_reason,
             updated_at
         )
+
         VALUES (?, ?, ?, ?, ?)
 
         ON CONFLICT(client, order_id)
@@ -171,12 +213,17 @@ def count_status(status):
         SELECT COUNT(*)
         FROM orders_status
         WHERE client=? AND status=?
-    """, (client_name, status))
+    """, (
+        client_name,
+        status
+    ))
 
-    return cursor.fetchone()[0]
+    result = cursor.fetchone()
+
+    return result[0]
 
 
-def generate_pdf(report_text):
+def generate_pdf(text):
 
     temp_pdf = tempfile.NamedTemporaryFile(
         delete=False,
@@ -185,11 +232,10 @@ def generate_pdf(report_text):
 
     c = canvas.Canvas(temp_pdf.name)
 
-    lines = report_text.split("\n")
-
     y = 800
 
-    for line in lines:
+    for line in text.split("\n"):
+
         c.drawString(50, y, line)
         y -= 20
 
@@ -198,22 +244,42 @@ def generate_pdf(report_text):
     return temp_pdf.name
 
 
-# ---------------------------------
-# MAIN LOGIC
-# ---------------------------------
+# -----------------------------------
+# MAIN APP
+# -----------------------------------
 if orders_file and returns_file:
 
     try:
 
-        orders_df = pd.read_csv(orders_file)
-        returns_df = pd.read_csv(returns_file, header=1)
+        # -------------------------------
+        # READ FILES
+        # -------------------------------
+        orders_df = pd.read_csv(
+            orders_file
+        )
 
-        orders_df = clean_df(orders_df)
-        returns_df = clean_df(returns_df)
+        returns_df = pd.read_csv(
+            returns_file,
+            header=1
+        )
 
+        orders_df = clean_df(
+            orders_df
+        )
+
+        returns_df = clean_df(
+            returns_df
+        )
+
+        # -------------------------------
+        # COLUMN NAMES
+        # -------------------------------
         orders_col = "order-id"
         returns_col = "Order ID (Hide)"
 
+        # -------------------------------
+        # MERGE
+        # -------------------------------
         merged_df = pd.merge(
             returns_df,
             orders_df,
@@ -222,8 +288,9 @@ if orders_file and returns_file:
             how="left"
         )
 
-        merged_df = clean_df(merged_df)
-
+        # -------------------------------
+        # ROLE
+        # -------------------------------
         role = st.session_state.role
 
         # =================================
@@ -231,17 +298,29 @@ if orders_file and returns_file:
         # =================================
         if role == "Admin":
 
-            st.subheader("👨‍💼 Admin Dashboard")
+            st.subheader(
+                "👨‍💼 Admin Dashboard"
+            )
 
-            total_orders = len(orders_df)
+            total_orders = len(
+                orders_df[orders_col].unique()
+            )
 
-            in_production = count_status("In Production")
+            in_production = count_status(
+                "In Production"
+            )
 
-            delayed = count_status("Delayed")
+            delayed = count_status(
+                "Delayed"
+            )
 
-            ready_shipping = count_status("Ready for Shipping")
+            ready_shipping = count_status(
+                "Ready for Shipping"
+            )
 
-            shipped = count_status("Shipped")
+            shipped = count_status(
+                "Shipped"
+            )
 
             returned = (
                 count_status("Returned") +
@@ -250,16 +329,39 @@ if orders_file and returns_file:
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-            c1.metric("Orders", total_orders)
-            c2.metric("In Production", in_production)
-            c3.metric("Delayed", delayed)
-            c4.metric("Ready Shipping", ready_shipping)
-            c5.metric("Shipped", shipped)
-            c6.metric("Returned", returned)
+            c1.metric(
+                "Orders",
+                total_orders
+            )
 
-            # -----------------------------
-            # MONTHLY ANALYTICS
-            # -----------------------------
+            c2.metric(
+                "In Production",
+                in_production
+            )
+
+            c3.metric(
+                "Delayed",
+                delayed
+            )
+
+            c4.metric(
+                "Ready Shipping",
+                ready_shipping
+            )
+
+            c5.metric(
+                "Shipped",
+                shipped
+            )
+
+            c6.metric(
+                "Returned",
+                returned
+            )
+
+            # ---------------------------
+            # ANALYTICS
+            # ---------------------------
             cursor.execute("""
                 SELECT updated_at, status
                 FROM orders_status
@@ -272,21 +374,31 @@ if orders_file and returns_file:
 
                 analytics_df = pd.DataFrame(
                     rows,
-                    columns=["updated_at", "status"]
+                    columns=[
+                        "updated_at",
+                        "status"
+                    ]
                 )
 
-                analytics_df["updated_at"] = pd.to_datetime(
+                analytics_df[
+                    "updated_at"
+                ] = pd.to_datetime(
                     analytics_df["updated_at"]
                 )
 
                 analytics_df["month"] = (
-                    analytics_df["updated_at"]
+                    analytics_df[
+                        "updated_at"
+                    ]
                     .dt.strftime("%Y-%m")
                 )
 
                 chart_df = (
                     analytics_df
-                    .groupby(["month", "status"])
+                    .groupby([
+                        "month",
+                        "status"
+                    ])
                     .size()
                     .reset_index(name="count")
                 )
@@ -296,7 +408,7 @@ if orders_file and returns_file:
                     x="month",
                     y="count",
                     color="status",
-                    title="Monthly Operations Analytics"
+                    title="Monthly Analytics"
                 )
 
                 st.plotly_chart(
@@ -304,12 +416,14 @@ if orders_file and returns_file:
                     use_container_width=True
                 )
 
-            # -----------------------------
+            # ---------------------------
             # PDF REPORT
-            # -----------------------------
-            st.subheader("📄 Generate PDF Report")
+            # ---------------------------
+            st.subheader(
+                "📄 Generate Report"
+            )
 
-            report = f"""
+            report_text = f"""
 EXPORT OPERATIONS REPORT
 
 Client: {client_name}
@@ -325,7 +439,9 @@ Generated At:
 {datetime.now()}
 """
 
-            pdf_path = generate_pdf(report)
+            pdf_path = generate_pdf(
+                report_text
+            )
 
             with open(pdf_path, "rb") as f:
 
@@ -340,25 +456,39 @@ Generated At:
         # =================================
         elif role == "Production":
 
-            st.subheader("🏭 Production Dashboard")
+            st.subheader(
+                "🏭 Production Dashboard"
+            )
 
-            prod_df = orders_df.copy()
+            st.dataframe(
+                orders_df.head(20),
+                use_container_width=True
+            )
 
-            st.dataframe(prod_df)
+            st.subheader(
+                "🔧 Update Production Status"
+            )
 
-            st.subheader("🔧 Update Production Status")
+            for idx, row in orders_df.head(20).iterrows():
 
-            for idx, row in prod_df.head(20).iterrows():
+                order_id = str(
+                    row[orders_col]
+                )
 
-                order_id = row.get("order-id", f"row-{idx}")
-
-                current_status = get_status(order_id)
+                current_status = get_status(
+                    order_id
+                )
 
                 st.markdown("---")
 
-                st.write(f"### Order: {order_id}")
+                st.write(
+                    f"### Order: {order_id}"
+                )
 
-                st.write(f"Current Status: {current_status}")
+                st.write(
+                    f"Current Status: "
+                    f"{current_status}"
+                )
 
                 status = st.selectbox(
                     f"Select Status {idx}",
@@ -368,7 +498,7 @@ Generated At:
                         "Delayed",
                         "Ready for Shipping"
                     ],
-                    key=f"status_{idx}"
+                    key=f"prod_{idx}"
                 )
 
                 reason = ""
@@ -377,10 +507,12 @@ Generated At:
 
                     reason = st.text_input(
                         "Enter Delay Reason",
-                        key=f"reason_{idx}"
+                        key=f"delay_{idx}"
                     )
 
-                if st.button(f"Update {idx}"):
+                if st.button(
+                    f"Update {idx}"
+                ):
 
                     update_status(
                         order_id,
@@ -388,16 +520,22 @@ Generated At:
                         reason
                     )
 
-                    st.success("Status Updated")
+                    st.success(
+                        "Status Updated"
+                    )
+
+                    st.rerun()
 
                 # -------------------------
                 # WHATSAPP BUTTON
                 # -------------------------
-                whatsapp_number = "919999999999"
+                whatsapp_number = (
+                    "919999999999"
+                )
 
                 message = (
                     f"Order {order_id} "
-                    f"status updated to {status}"
+                    f"updated to {status}"
                 )
 
                 whatsapp_link = (
@@ -406,21 +544,24 @@ Generated At:
                     f"?text={message}"
                 )
 
-                st.markdown(
-                    f"[📲 Forward on WhatsApp]({whatsapp_link})"
+                st.link_button(
+                    "📲 Forward on WhatsApp",
+                    whatsapp_link
                 )
 
                 # -------------------------
                 # EMAIL BUTTON
                 # -------------------------
                 email_link = (
-                    f"mailto:operations@company.com"
+                    f"mailto:"
+                    f"operations@company.com"
                     f"?subject=Order Update"
                     f"&body={message}"
                 )
 
-                st.markdown(
-                    f"[📧 Forward on Email]({email_link})"
+                st.link_button(
+                    "📧 Forward on Email",
+                    email_link
                 )
 
         # =================================
@@ -428,25 +569,39 @@ Generated At:
         # =================================
         elif role == "Shipping":
 
-            st.subheader("🚚 Shipping Dashboard")
+            st.subheader(
+                "🚚 Shipping Dashboard"
+            )
 
-            shipping_df = merged_df.copy()
+            st.dataframe(
+                merged_df.head(20),
+                use_container_width=True
+            )
 
-            st.dataframe(shipping_df)
+            st.subheader(
+                "📦 Update Shipping Status"
+            )
 
-            st.subheader("📦 Shipping Updates")
+            for idx, row in merged_df.head(20).iterrows():
 
-            for idx, row in shipping_df.head(20).iterrows():
+                order_id = str(
+                    row[returns_col]
+                )
 
-                order_id = row.get("order-id", f"row-{idx}")
-
-                current_status = get_status(order_id)
+                current_status = get_status(
+                    order_id
+                )
 
                 st.markdown("---")
 
-                st.write(f"### Order: {order_id}")
+                st.write(
+                    f"### Order: {order_id}"
+                )
 
-                st.write(f"Current Status: {current_status}")
+                st.write(
+                    f"Current Status: "
+                    f"{current_status}"
+                )
 
                 ship_status = st.selectbox(
                     f"Shipping Status {idx}",
@@ -458,23 +613,32 @@ Generated At:
                     key=f"ship_{idx}"
                 )
 
-                if st.button(f"Update Shipping {idx}"):
+                if st.button(
+                    f"Update Shipping {idx}"
+                ):
 
                     update_status(
                         order_id,
                         ship_status
                     )
 
-                    st.success("Shipping Updated")
+                    st.success(
+                        "Shipping Updated"
+                    )
+
+                    st.rerun()
 
                 # -------------------------
-                # WHATSAPP BUTTON
+                # WHATSAPP
                 # -------------------------
-                whatsapp_number = "919999999999"
+                whatsapp_number = (
+                    "919999999999"
+                )
 
                 message = (
                     f"Order {order_id} "
-                    f"updated to {ship_status}"
+                    f"updated to "
+                    f"{ship_status}"
                 )
 
                 whatsapp_link = (
@@ -483,17 +647,23 @@ Generated At:
                     f"?text={message}"
                 )
 
-                st.markdown(
-                    f"[📲 Notify via WhatsApp]({whatsapp_link})"
+                st.link_button(
+                    "📲 Notify via WhatsApp",
+                    whatsapp_link
                 )
 
-        st.success("✅ Export Operations SaaS Running")
+            st.success(
+                "🚚 Shipping System Active"
+            )
 
     except Exception as e:
 
         st.error("🚨 Error")
+
         st.write(e)
 
 else:
 
-    st.info("Upload both files to begin")
+    st.info(
+        "Upload both Orders and Returns files"
+    )
